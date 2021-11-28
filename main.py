@@ -1,12 +1,20 @@
 import cv2
-import numpy as np
+# import numpy as np
+# import subprocess
+import multiprocessing as mp
 
 video1 = cv2.VideoCapture('samples/sample1.mp4')
 video2 = cv2.VideoCapture('samples/sample2.mp4')
-bar = cv2.imread('samples/bg.jpeg')
+
+# video2 = cv2.VideoCapture(0)
+# if not (video2.isOpened()):
+#     print("Could not open video device")
+
+
+bar = cv2.imread('samples/bg.jpg')
 logo = cv2.imread('samples/logo.jpeg')
 save_name = "output.mp4"
-fps = video1.get(cv2.CAP_PROP_FPS)
+fps = video2.get(cv2.CAP_PROP_FPS)
 width = 690
 height = 360
 output_size = ((width * 2), height)
@@ -15,67 +23,81 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(save_name, fourcc, fps, output_size)
 
 
-def connect_frame(frame1, frame2, width, height):
-    frame2 = cv2.resize(frame2, (int(width), int(height)), interpolation=cv2.INTER_AREA)
-    bg = cv2.resize(frame1, (int(width + width), int(height)), interpolation=cv2.INTER_AREA)
-    bg[0:int(height), 0:int(width)] = frame1
-    bg[0:int(height), int(width):int(width + width)] = frame2
-    return (bg)
+def connect_frame(left_frame, right_frame, box_width, box_height):
+    right_frame = cv2.resize(right_frame, (int(box_width), int(box_height)), interpolation=cv2.INTER_AREA)
+    cover = cv2.resize(left_frame, (int(box_width + box_width), int(box_height)), interpolation=cv2.INTER_AREA)
+    cover[0:int(box_height), 0:int(box_width)] = left_frame
+    cover[0:int(box_height), int(box_width):int(box_width + width)] = right_frame
+    return cover
 
 
-while True:
+def render_template(main_frame, logo_image, bar_image, border_size=20):
+    main_frame = cv2.copyMakeBorder(main_frame, border_size, border_size, border_size, border_size,
+                                    cv2.BORDER_CONSTANT, value=[255, 255, 255])
 
-    ret1, frame1 = video1.read()
-    ret2, frame2 = video2.read()
+    frame_height, frame_width, _ = main_frame.shape
 
-    if ret1 is not False and ret2 is not False:
+    y = 0
+    x = 0
+    x_bar = bar_image[x:frame_height, y:border_size]
+    # added left bar
+    img_height, img_width, _ = x_bar.shape
+    main_frame[x:x + img_height, y:y + img_width] = x_bar
 
-        frame = connect_frame(frame1, frame2, width, height)
-        frame = cv2.copyMakeBorder(frame, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+    y = frame_width - border_size
+    x = 0
+    x_bar = bar_image[x:frame_height, y:y + border_size]
+    # added right bar
+    img_height, img_width, _ = x_bar.shape
+    main_frame[x:x + img_height, y:y + img_width] = x_bar
 
-        # added left bar
-        y_bar = cv2.resize(bar, (int(20), int(height + 40)), interpolation=cv2.INTER_AREA)
-        x_bar = cv2.resize(bar, (int(40+width*2), int(20)), interpolation=cv2.INTER_AREA)
-        img_height, img_width, _ = y_bar.shape
-        x = 0
-        y = 0
-        frame[x:x + img_height, y:y + img_width] = y_bar
+    y = 0
+    x = 0
+    y_bar = bar_image[x:border_size, y:frame_width]
+    # added top bar
+    img_height, img_width, _ = y_bar.shape
+    main_frame[x:x + img_height, y:y + img_width] = y_bar
 
-        # added top bar
-        img_height, img_width, _ = x_bar.shape
-        x = 0
-        y = 0
-        frame[x:x + img_height, y:y + img_width] = x_bar
+    y = 0
+    x = frame_height - border_size
+    y_bar = bar_image[x:x + border_size, y:frame_width]
+    # added bottom bar
+    img_height, img_width, _ = y_bar.shape
+    main_frame[x:x + img_height, y:y + img_width] = y_bar
 
-        # added bottom bar
-        img_height, img_width, _ = x_bar.shape
-        x = 40+height-20
-        y = 0
-        frame[x:x + img_height, y:y + img_width] = x_bar
+    logo = cv2.resize(logo_image, (int(100), int(100)), interpolation=cv2.INTER_AREA)
+    img_height, img_width, _ = logo.shape
+    x = border_size
+    y = border_size
+    main_frame[x:x + img_width, y:y + img_height] = logo
 
-        # added right bar
-        img_height, img_width, _ = y_bar.shape
-        x = 0
-        y = 40+width*2-20
-        frame[x:x + img_height, y:y + img_width] = y_bar
+    cv2.imshow('Video frame', main_frame)  # for video showing window
+
+    out.write(cv2.resize(main_frame, output_size))
 
 
-        # add logo
-        logo = cv2.resize(logo, (int(100), int(100)), interpolation=cv2.INTER_AREA)
-        img_height, img_width, _ = logo.shape
-        x = 10
-        y = 10
-        frame[x:x + img_width, y:y + img_height] = logo
+if __name__ == '__main__':
+    mp.freeze_support()
+    while True:
 
-        cv2.imshow('Video frame', frame)  # for video showing window
-        out.write(cv2.resize(frame, output_size))
+        ret1, frame_1 = video1.read()
+        ret2, frame_2 = video2.read()
 
-        key = cv2.waitKey(1)
-        if key != ord('q'):
-            continue
+        if ret1 is not False and ret2 is not False:
+
+            frame = connect_frame(frame_1, frame_2, width, height)
+
+            render_template(frame, logo, bar)
+            print(mp.cpu_count())
+            # p = mp.Process(target=render_template, args=(frame, logo, bar))
+            # p.start()
+
+            key = cv2.waitKey(1)
+            if key != ord('q'):
+                continue
+            break
+        else:
+            print("video is not found")
         break
-    else:
-        print("video is not found")
-    break
-out.release()
-cv2.destroyAllWindows()
+    out.release()
+    cv2.destroyAllWindows()
