@@ -2,13 +2,15 @@ import cv2
 # import numpy as np
 # import subprocess
 import multiprocessing as mp
+from collections import deque
+from multiprocessing.pool import ThreadPool
 
 video1 = cv2.VideoCapture('samples/sample1.mp4')
 video2 = cv2.VideoCapture('samples/sample2.mp4')
 
 # video2 = cv2.VideoCapture(0)
 # if not (video2.isOpened()):
-#     print("Could not open video device")
+#      print("Could not open video device")
 
 
 bar = cv2.imread('samples/bg.jpg')
@@ -71,33 +73,38 @@ def render_template(main_frame, logo_image, bar_image, border_size=20):
     y = border_size
     main_frame[x:x + img_width, y:y + img_height] = logo
 
-    cv2.imshow('Video frame', main_frame)  # for video showing window
-
-    out.write(cv2.resize(main_frame, output_size))
+    return main_frame
 
 
 if __name__ == '__main__':
     mp.freeze_support()
+    pool = ThreadPool(processes=mp.cpu_count())
+    pending_task = deque()
+
     while True:
+        # print(len(pending_task))
 
-        ret1, frame_1 = video1.read()
-        ret2, frame_2 = video2.read()
+        while len(pending_task) > 0 and pending_task[0].ready():
+            res = pending_task.popleft().get()
+            # cv2.imshow('threaded video', res) ıf you want to see ın guı
+            out.write(cv2.resize(res, output_size))
 
-        if ret1 is not False and ret2 is not False:
+        if len(pending_task) < mp.cpu_count():
 
-            frame = connect_frame(frame_1, frame_2, width, height)
+            ret1, frame_1 = video1.read()
+            ret2, frame_2 = video2.read()
 
-            render_template(frame, logo, bar)
-            print(mp.cpu_count())
-            # p = mp.Process(target=render_template, args=(frame, logo, bar))
-            # p.start()
+            if ret1 is not False and ret2 is not False:
+                frame = connect_frame(frame_1, frame_2, width, height)
+                task = pool.apply_async(render_template, (frame.copy(), logo.copy(), bar.copy(),))
+                pending_task.append(task)
 
-            key = cv2.waitKey(1)
-            if key != ord('q'):
-                continue
+                key = cv2.waitKey(1)
+                if key != ord('q'):
+                    continue
+                break
+            else:
+                print("video is not found")
             break
-        else:
-            print("video is not found")
-        break
     out.release()
     cv2.destroyAllWindows()
